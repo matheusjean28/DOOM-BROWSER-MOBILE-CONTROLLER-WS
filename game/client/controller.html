@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>DOOM Controller</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<!-- ── QR / SID scan view ──────────────────────────────────────── -->
+<div id="qr-scan-page">
+  <h2>💀 DOOM Controller</h2>
+  <p>Enter the Session ID shown on the game screen,<br>or scan the QR code with another device.</p>
+  <form id="sid-form" onsubmit="joinSession(event)">
+    <input id="sid-input" type="text" maxlength="7" placeholder="SID" autocomplete="off" autocorrect="off" spellcheck="false">
+    <button id="sid-submit" type="submit">JOIN</button>
+  </form>
+  <div id="sid-error"></div>
+</div>
+
+<!-- ── Controller UI (hidden until joined) ──────────────────────── -->
+<div id="controller-wrap" style="display:none">
+
+  <div id="ctrl-header">
+    <strong>💀 DOOM Controller</strong><br>
+    <span id="ctrl-session-label"></span>
+  </div>
+
+  <!-- Weapon strip -->
+  <div class="weapon-strip" id="weapon-strip">
+    <button class="weapon-btn active" data-weapon="0" ontouchstart="selectWeapon(0)" onclick="selectWeapon(0)">1<br>PISTOL</button>
+    <button class="weapon-btn"        data-weapon="1" ontouchstart="selectWeapon(1)" onclick="selectWeapon(1)">2<br>SHOTGUN</button>
+    <button class="weapon-btn"        data-weapon="2" ontouchstart="selectWeapon(2)" onclick="selectWeapon(2)">3<br>PLASMA</button>
+  </div>
+
+  <!-- D-pad -->
+  <div id="ctrl-dpad">
+    <!-- row 1 -->
+    <div></div>
+    <div class="dpad-btn" id="btn-up"   >▲</div>
+    <div></div>
+    <!-- row 2 -->
+    <div class="dpad-btn" id="btn-left" >◀</div>
+    <div class="dpad-center">✛</div>
+    <div class="dpad-btn" id="btn-right">▶</div>
+    <!-- row 3 -->
+    <div></div>
+    <div class="dpad-btn" id="btn-down" >▼</div>
+    <div></div>
+  </div>
+
+  <!-- Action buttons -->
+  <div id="ctrl-actions">
+    <button class="action-btn pause-btn" id="btn-pause">⏸<br>PAUSE</button>
+    <button class="action-btn fire-btn"  id="btn-fire" >🔥<br>FIRE</button>
+    <button class="action-btn save-btn"  id="btn-save" >💾<br>SAVE</button>
+  </div>
+
+  <div id="ctrl-status">Connected</div>
+</div>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────
+const state = {
+  up: false, down: false, left: false, right: false,
+  fire: false, pause: false, save: false,
+  weapon0: false, weapon1: false, weapon2: false,
+};
+let ws       = null;
+let sendLoop = null;
+let activeWeapon = 0;
+
+// ── Session join ───────────────────────────────────────────────────────────
+// Auto-join if ?sid= in URL (from QR code link)
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(location.search);
+  const sid    = params.get('sid');
+  if (sid) { document.getElementById('sid-input').value = sid; connectWS(sid); }
+});
+
+function joinSession(e) {
+  e.preventDefault();
+  const sid = document.getElementById('sid-input').value.trim().toUpperCase();
+  if (!sid) return;
+  connectWS(sid);
+}
+
+function connectWS(sid) {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url   = `${proto}://${location.host}/ws?role=controller&sid=${sid}`;
+  ws = new WebSocket(url);
+
+  ws.addEventListener('open', () => setStatus('Connected ✔', '#4f4'));
+
+  ws.addEventListener('message', e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'joined') {
+      document.getElementById('qr-scan-page').style.display     = 'none';
+      document.getElementById('controller-wrap').style.display  = 'flex';
+      document.getElementById('ctrl-session-label').textContent = `Session: ${sid}`;
+      bindControls();
+      startSendLoop();
+    }
+    if (msg.type === 'error') {
+      document.getElementById('sid-error').textContent = msg.message;
+    }
+    if (msg.type === 'game_disconnected') {
+      setStatus('Game disconnected — refresh to retry', '#f44');
+    }
+  });
+
+  ws.addEventListener('close', () => setStatus('Disconnected', '#f44'));
+  ws.addEventListener('error', () => ws.close());
+}
+
+// ── Send loop (20 Hz) ──────────────────────────────────────────────────────
+function startSendLoop() {
+  sendLoop = setInterval(() => {
+    if (ws?.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'input', state: { ...state } }));
+    }
+    // Reset one-shot buttons
+    state.pause = false;
+    state.save  = false;
+    state.weapon0 = false; state.weapon1 = false; state.weapon2 = false;
+  }, 50);
+}
+
+function setStatus(text, color) {
+  const el = document.getElementById('ctrl-status');
+  if (el) { el.textContent = text; el.style.color = color; }
+}
+
+// ── Weapon select ──────────────────────────────────────────────────────────
+function selectWeapon(idx) {
+  activeWeapon = idx;
+  document.querySelectorAll('.weapon-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+  state[`weapon${idx}`] = true;
+}
+
+// ── Button binding (touch + mouse) ────────────────────────────────────────
+function bindBtn(id, stateKey, oneShot) {
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  function press(e) {
+    e.preventDefault();
+    el.classList.add('active');
+    if (oneShot) { state[stateKey] = true; }
+    else         { state[stateKey] = true; }
+  }
+  function release(e) {
+    e.preventDefault();
+    el.classList.remove('active');
+    if (!oneShot) state[stateKey] = false;
+  }
+
+  el.addEventListener('touchstart', press,   { passive: false });
+  el.addEventListener('touchend',   release, { passive: false });
+  el.addEventListener('mousedown',  press);
+  el.addEventListener('mouseup',    release);
+}
+
+function bindControls() {
+  bindBtn('btn-up',    'up');
+  bindBtn('btn-down',  'down');
+  bindBtn('btn-left',  'left');
+  bindBtn('btn-right', 'right');
+  bindBtn('btn-fire',  'fire');
+  bindBtn('btn-pause', 'pause', true);
+  bindBtn('btn-save',  'save',  true);
+}
+</script>
+</body>
+</html>

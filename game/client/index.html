@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DOOM Browser Game</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="game-wrap">
+
+  <!-- Top bar -->
+  <div id="top-bar">
+    <span><strong>💀 DOOM</strong></span>
+    <span id="ws-status" style="color:#888">Connecting…</span>
+    <div style="display:flex;gap:6px">
+      <button onclick="game.pause()" title="P">⏸ Pause</button>
+      <button onclick="game.saveState()" title="Ctrl+S">💾 Save</button>
+      <button onclick="game.loadState()" title="Ctrl+L">📂 Load</button>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas-container">
+    <canvas id="gameCanvas" width="640" height="400"></canvas>
+    <div id="qr-container"></div>
+  </div>
+
+  <!-- Keyboard help -->
+  <div style="font-size:11px;color:#555;padding:4px 12px;background:#111;width:100%;max-width:640px;text-align:center">
+    WASD / Arrows — Move &nbsp;|&nbsp; SPACE / CTRL — Fire &nbsp;|&nbsp;
+    1/2/3 — Weapon &nbsp;|&nbsp; P / Esc — Pause &nbsp;|&nbsp; F5 — Save &nbsp;|&nbsp; F9 — Load
+  </div>
+
+</div>
+
+<script src="js/game.js"></script>
+<script src="js/ws-client.js"></script>
+<script>
+  const canvas = document.getElementById('gameCanvas');
+
+  // Responsive canvas scaling
+  function resizeCanvas() {
+    const wrap  = document.getElementById('canvas-container');
+    const scale = Math.min(wrap.clientWidth / 640, wrap.clientHeight / 400);
+    canvas.style.width  = Math.floor(640 * scale) + 'px';
+    canvas.style.height = Math.floor(400 * scale) + 'px';
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // Boot game
+  const game = new DoomGame(canvas);
+  game.loadState(); // restore last session if any
+  game.start();
+
+  // Connect WS controller bridge
+  const wsClient = new GameWS(game);
+</script>
+</body>
+</html>
