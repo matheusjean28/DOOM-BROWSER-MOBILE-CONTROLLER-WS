@@ -39,11 +39,11 @@ const WEAPONS = [
 
 // ── Enemy definitions ─────────────────────────────────────────────────────
 const ENEMY_DEFS = [
-  { type: 0, name: 'Zombie',  hp: 40,  speed: 0.012, dmg: 8,  score: 100, color: '#7a6',   size: 0.5, isBoss: false },
-  { type: 1, name: 'Imp',     hp: 60,  speed: 0.018, dmg: 12, score: 200, color: '#d84',   size: 0.5, isBoss: false },
-  { type: 2, name: 'Demon',   hp: 90,  speed: 0.022, dmg: 20, score: 350, color: '#d44',   size: 0.6, isBoss: false },
-  { type: 3, name: 'Spectre', hp: 80,  speed: 0.025, dmg: 18, score: 300, color: '#999',   size: 0.55, isBoss: false },
-  { type: 4, name: 'Baron',   hp: 500, speed: 0.010, dmg: 40, score: 2000, color: '#f44',  size: 1.0,  isBoss: true  },
+  { type: 0, name: 'Zombie',  hp: 40,  speed: 0.012, dmg: 8,  score: 100,  color: '#4a8a4a', size: 0.8,  isBoss: false },
+  { type: 1, name: 'Imp',     hp: 60,  speed: 0.018, dmg: 12, score: 200,  color: '#cc6622', size: 0.85, isBoss: false },
+  { type: 2, name: 'Demon',   hp: 90,  speed: 0.022, dmg: 20, score: 350,  color: '#cc2222', size: 0.9,  isBoss: false },
+  { type: 3, name: 'Spectre', hp: 80,  speed: 0.025, dmg: 18, score: 300,  color: '#aaaaaa', size: 0.85, isBoss: false },
+  { type: 4, name: 'Baron',   hp: 500, speed: 0.010, dmg: 40, score: 2000, color: '#ff2222', size: 1.4,  isBoss: true  },
 ];
 
 // ── Stage maps (16×16 tile 0=empty 1=wall) ───────────────────────────────
@@ -109,23 +109,23 @@ const STAGE_MAPS = [
 
 // ── Stage enemy spawn configs ─────────────────────────────────────────────
 const STAGE_ENEMIES = [
-  // Stage 1: zombies, imps + 1 Baron boss at (13,13)
+  // Stage 1 — enemies close to player start (1.5,1.5) so they're immediately visible
   [
-    { type:0, x:3.5, y:3.5 }, { type:0, x:7.5, y:2.5 }, { type:1, x:5.5, y:8.5 },
-    { type:1, x:11.5, y:5.5}, { type:2, x:9.5, y:9.5 }, { type:0, x:2.5, y:11.5},
-    { type:4, x:13.5, y:13.5, boss: true },
+    { type:0, x:4.5, y:1.5 }, { type:0, x:1.5, y:4.5 }, { type:1, x:4.5, y:4.5 },
+    { type:1, x:7.5, y:3.5 }, { type:2, x:6.5, y:6.5 }, { type:0, x:3.5, y:7.5 },
+    { type:4, x:12.5, y:12.5, boss: true },
   ],
-  // Stage 2: imps, demons, spectres + 1 Baron boss
+  // Stage 2
   [
-    { type:1, x:3.5, y:2.5 }, { type:2, x:6.5, y:5.5 }, { type:3, x:10.5, y:3.5 },
-    { type:1, x:5.5, y:10.5}, { type:3, x:12.5, y:8.5}, { type:2, x:8.5, y:12.5},
-    { type:4, x:13.5, y:13.5, boss: true },
+    { type:1, x:4.5, y:1.5 }, { type:2, x:1.5, y:4.5 }, { type:3, x:5.5, y:4.5 },
+    { type:1, x:7.5, y:2.5 }, { type:3, x:9.5, y:6.5 }, { type:2, x:3.5, y:9.5 },
+    { type:4, x:12.5, y:12.5, boss: true },
   ],
-  // Stage 3: all types + no additional boss (stage 3 is the final)
+  // Stage 3
   [
-    { type:2, x:3.5, y:2.5 }, { type:3, x:7.5, y:3.5 }, { type:4, x:5.5, y:7.5  },
-    { type:1, x:11.5,y:6.5 }, { type:0, x:9.5, y:11.5}, { type:3, x:13.5, y:9.5 },
-    { type:2, x:2.5, y:13.5}, { type:4, x:13.5, y:13.5, boss: true },
+    { type:2, x:4.5, y:1.5 }, { type:3, x:1.5, y:4.5 }, { type:1, x:5.5, y:5.5 },
+    { type:0, x:8.5, y:3.5 }, { type:3, x:9.5, y:8.5 }, { type:2, x:3.5, y:11.5},
+    { type:4, x:6.5, y:8.5  }, { type:4, x:12.5, y:12.5, boss: true },
   ],
 ];
 
@@ -200,8 +200,8 @@ class DoomGame {
       ...ENEMY_DEFS[e.type],
       x: e.x, y: e.y,
       alive: true,
-      alertRange: e.boss ? 18 : 10,
-      attackTimer: 0,
+      alertRange: 20,         // always alert — enemies hunt from anywhere on map
+      attackTimer: 60,        // 1-second grace before first hit (at 60fps normalised dt)
     }));
     this.items   = STAGE_ITEMS[idx].map(i => ({ x: i.x, y: i.y, collected: false }));
     this.bullets = [];
@@ -411,11 +411,15 @@ class DoomGame {
 
     const zBuffer = new Float32Array(NUM_RAYS);
 
-    // Walls
+    // Walls — zBuffer stores the PERPENDICULAR (fish-eye-corrected) distance
+    // used for wall height, but we ALSO store the raw Euclidean ray distance
+    // for sprite depth testing so sprites aren't hidden behind "closer" walls.
+    const zBufferRaw = new Float32Array(NUM_RAYS);
     for (let ray = 0; ray < NUM_RAYS; ray++) {
       const rayAngle = this.player.angle - FOV / 2 + (ray / NUM_RAYS) * FOV;
-      const { dist, side } = this._castRay(rayAngle);
-      zBuffer[ray] = dist;
+      const { dist, rawDist, side } = this._castRay(rayAngle);
+      zBuffer[ray]    = dist;       // corrected — used for wall height
+      zBufferRaw[ray] = rawDist;    // raw Euclidean — used for sprite occlusion
 
       const wallH   = Math.floor(SCREEN_H / dist);
       const wallTop = Math.floor(HALF_H - wallH / 2);
@@ -432,8 +436,8 @@ class DoomGame {
       ctx.fillRect(ray, wallTop, 1, wallH);
     }
 
-    // Sprites (enemies + items)
-    this._renderSprites(zBuffer);
+    // Sprites (enemies + items) — pass raw distances for correct occlusion
+    this._renderSprites(zBufferRaw);
 
     // HUD
     this._renderHUD();
@@ -462,18 +466,21 @@ class DoomGame {
     for (let d = 0; d < MAX_DEPTH; d += 0.02) {
       const tx = Math.floor(x + cos * d);
       const ty = Math.floor(y + sin * d);
-      if (tx < 0 || ty < 0 || tx >= 16 || ty >= 16) return { dist: MAX_DEPTH, side: 'N' };
+      if (tx < 0 || ty < 0 || tx >= 16 || ty >= 16) return { dist: MAX_DEPTH, rawDist: MAX_DEPTH, side: 'N' };
       if (this.map[ty][tx] === 1) {
-        const dist = d * Math.cos(angle - this.player.angle); // fish-eye fix
+        // rawDist = actual Euclidean distance along the ray (for sprite occlusion)
+        // dist    = fish-eye-corrected perpendicular distance (for wall height)
+        const rawDist = d;
+        const dist    = d * Math.cos(angle - this.player.angle);
         let side = 'N';
         const fx = (x + cos * d) - tx;
         const fy = (y + sin * d) - ty;
         if (Math.abs(fy) < Math.abs(fx)) side = fy > 0.5 ? 'S' : 'N';
         else                              side = fx > 0.5 ? 'E' : 'W';
-        return { dist: Math.max(0.1, dist), side };
+        return { dist: Math.max(0.1, dist), rawDist: Math.max(0.1, rawDist), side };
       }
     }
-    return { dist: MAX_DEPTH, side: 'N' };
+    return { dist: MAX_DEPTH, rawDist: MAX_DEPTH, side: 'N' };
   }
 
   _renderSprites(zBuffer) {
@@ -482,12 +489,24 @@ class DoomGame {
 
     for (const e of this.enemies) {
       if (!e.alive) continue;
-      sprites.push({ x: e.x, y: e.y, color: e.color, size: e.size, label: e.name, hp: e.hp, maxHp: ENEMY_DEFS[e.type].hp });
+      sprites.push({
+        x: e.x, y: e.y,
+        color: e.color,
+        size: e.size,
+        isEnemy: true,
+        isBoss: e.isBoss,
+        hp: e.hp,
+        maxHp: ENEMY_DEFS[e.type].hp,
+        name: e.name,
+      });
     }
     for (const item of this.items) {
-      if (!item.collected) sprites.push({ x: item.x, y: item.y, color: '#0f0', size: 0.3, label: 'MEDKIT' });
+      if (!item.collected) {
+        sprites.push({ x: item.x, y: item.y, color: '#00ff44', size: 0.5, isItem: true });
+      }
     }
 
+    // Paint back-to-front (painter's algorithm)
     sprites.sort((a, b) => {
       const da = (a.x - p.x) ** 2 + (a.y - p.y) ** 2;
       const db = (b.x - p.x) ** 2 + (b.y - p.y) ** 2;
@@ -498,36 +517,91 @@ class DoomGame {
     for (const sp of sprites) {
       const dx = sp.x - p.x, dy = sp.y - p.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 0.2) continue;
+      if (dist < 0.25) continue;
 
+      // Angle of sprite relative to player's viewing direction
       const sprAngle = Math.atan2(dy, dx) - p.angle;
       let normAngle = sprAngle;
       while (normAngle >  Math.PI) normAngle -= TWO_PI;
       while (normAngle < -Math.PI) normAngle += TWO_PI;
-      if (Math.abs(normAngle) > FOV * 0.75) continue;
+      // Cull sprites clearly outside FOV
+      if (Math.abs(normAngle) > FOV * 0.6) continue;
 
+      // Project onto screen
       const screenX = Math.floor((normAngle / FOV + 0.5) * SCREEN_W);
-      const sprH    = Math.floor((SCREEN_H / dist) * sp.size);
+      const sprH    = Math.min(SCREEN_H, Math.floor((SCREEN_H / dist) * sp.size));
       const sprW    = sprH;
-      const drawTop = Math.floor(HALF_H - sprH / 2);
-      const startX  = screenX - sprW / 2;
+      const drawTop = Math.floor(HALF_H - sprH * 0.55);  // feet at horizon
+      const startX  = Math.floor(screenX - sprW / 2);
 
+      // Shade by distance
+      const shade = Math.max(0.15, 1 - dist / MAX_DEPTH);
+
+      // Draw column by column, only where no wall is closer
       for (let sx = 0; sx < sprW; sx++) {
-        const col = Math.floor(startX + sx);
+        const col = startX + sx;
         if (col < 0 || col >= SCREEN_W) continue;
-        if (zBuffer[col] < dist) continue;
-        ctx.fillStyle = sp.color;
-        ctx.fillRect(col, drawTop, 1, sprH);
+        // FIX: draw only if wall (zBuffer) is farther than the sprite
+        if (zBuffer[col] <= dist) continue;
+
+        const u = sx / sprW;  // horizontal UV 0..1
+
+        // Build a humanoid silhouette:
+        //   head  : top 22% — round-ish, inner 60%
+        //   torso : 22–65%  — full width
+        //   legs  : 65–100% — two pillars (left/right 35%)
+        for (let row = drawTop; row < drawTop + sprH; row++) {
+          if (row < 0 || row >= SCREEN_H) continue;
+          const v = (row - drawTop) / sprH;
+
+          let draw = false;
+          if (v < 0.22) {
+            // head — centred oval, inner 55%
+            draw = u > 0.225 && u < 0.775;
+          } else if (v < 0.65) {
+            // torso — full width minus 10% margins
+            draw = u > 0.1 && u < 0.9;
+          } else {
+            // legs — left leg or right leg
+            draw = (u > 0.1 && u < 0.42) || (u > 0.58 && u < 0.9);
+          }
+
+          if (!draw) continue;
+
+          // Darken sides for a crude 3-D look
+          const edgeFade = Math.min(u, 1 - u) * 5;          // 0 at edges, >1 in centre
+          const bright   = shade * Math.min(1, 0.4 + edgeFade * 0.6);
+          ctx.fillStyle  = this._shadeColor(sp.color, bright);
+          ctx.fillRect(col, row, 1, 1);
+        }
       }
 
-      // HP bar for enemies
-      if (sp.hp !== undefined) {
-        const barW = sprW;
+      // HP bar
+      if (sp.isEnemy) {
+        const barW  = Math.max(8, sprW);
+        const barX  = Math.floor(screenX - barW / 2);
+        const barY  = drawTop - 7;
         const ratio = sp.hp / sp.maxHp;
-        ctx.fillStyle = '#444';
-        ctx.fillRect(startX, drawTop - 6, barW, 4);
-        ctx.fillStyle = ratio > 0.5 ? '#4f4' : ratio > 0.25 ? '#ff4' : '#f44';
-        ctx.fillRect(startX, drawTop - 6, barW * ratio, 4);
+        ctx.fillStyle = '#222';
+        ctx.fillRect(barX, barY, barW, 4);
+        ctx.fillStyle = ratio > 0.5 ? '#33ff33' : ratio > 0.25 ? '#ffdd00' : '#ff3333';
+        ctx.fillRect(barX, barY, Math.floor(barW * ratio), 4);
+        // Name tag when close
+        if (dist < 4) {
+          ctx.fillStyle   = sp.isBoss ? '#ff4444' : '#ffff88';
+          ctx.font        = `bold ${sp.isBoss ? 11 : 9}px monospace`;
+          ctx.textAlign   = 'center';
+          ctx.fillText(sp.name, screenX, barY - 2);
+        }
+      }
+
+      // Medkit cross
+      if (sp.isItem) {
+        const cx = screenX, cy = drawTop + Math.floor(sprH / 2);
+        const arm = Math.max(2, Math.floor(sprH * 0.25));
+        ctx.fillStyle = '#00ff44';
+        ctx.fillRect(cx - 1, cy - arm, 3, arm * 2);
+        ctx.fillRect(cx - arm, cy - 1, arm * 2, 3);
       }
     }
   }
